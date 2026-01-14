@@ -1,0 +1,40 @@
+[project]
+name = "hydt-kiro"
+version = "0.1.0"
+description = "迎宾器系统 - 基于计算机视觉的实时人脸检测和问候系统"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[all]>=0.128.0",
+    "hypothesis>=6.150.2",
+    "mediapipe==0.10.21",
+    "pillow>=12.1.0",
+    "pytest>=9.0.2",
+    "uvicorn>=0.40.0",
+    "opencv-contrib-python>=4.11.0",
+    "numpy>=1.26.4",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --strict-markers"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
