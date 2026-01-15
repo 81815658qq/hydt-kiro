@@ -42,5 +42,17 @@ def setup_logger(name: str = "greeter", level: int = logging.INFO) -> logging.Lo
     
     return logger
 
+def get_logger(name: str = "greeter") -> logging.Logger:
+    """
+    获取或创建指定名称的日志记录器
+    
+    Args:
+        name: 日志记录器名称
+        
+    Returns:
+        Logger实例
+    """
+    return setup_logger(name)
+
 # 创建默认logger实例
 logger = setup_logger()
