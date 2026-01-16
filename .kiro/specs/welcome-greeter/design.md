@@ -91,8 +91,10 @@ class FaceDetector:
     def detect_faces(self, frame: np.ndarray) -> List[FaceDetection]:
         """检测帧中的所有人脸，返回人脸检测结果列表"""
         
-    def extract_face_region(self, frame: np.ndarray, detection: FaceDetection) -> np.ndarray:
-        """从帧中提取人脸区域图像"""
+    def extract_face_region(self, frame: np.ndarray, detection: FaceDetection, expand_ratio: float = 0.3) -> np.ndarray:
+        """从帧中提取人脸区域图像，可选择扩大边界框以包含更多周边区域（如头发）"""
+        
+    def calculate_face_area(self, detection: FaceDetection, frame_width: int, f
 ```
 
 ### 3. FaceFeatureExtractor（人脸特征提取器）

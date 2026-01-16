@@ -20,6 +20,7 @@ class VisitorRecord:
     face_image_path: str  # 人脸图片保存路径（相对路径）
     first_seen: datetime  # 首次出现时间
     blessing: str  # 分配的祝福语
+    face_area: int = 0  # 人脸区域面积（像素），用于判断图片质量
     
     def to_dict(self) -> dict:
         """
@@ -32,7 +33,8 @@ class VisitorRecord:
             "visitor_id": self.visitor_id,
             "face_image_path": self.face_image_path,
             "first_seen": self.first_seen.isoformat(),
-            "blessing": self.blessing
+            "blessing": self.blessing,
+            "face_area": self.face_area
         }
     
     @classmethod
@@ -52,7 +54,8 @@ class VisitorRecord:
             features=features,
             face_image_path=data["face_image_path"],
             first_seen=datetime.fromisoformat(data["first_seen"]),
-            blessing=data["blessing"]
+            blessing=data["blessing"],
+            face_area=data.get("face_area", 0)  # 兼容旧数据
         )
 
 
@@ -125,7 +128,8 @@ class FaceDatabase:
         self, 
         features: np.ndarray, 
         face_image: np.ndarray, 
-        blessing: str
+        blessing: str,
+        face_area: int = 0
     ) -> VisitorRecord:
         """
         添加新访客记录
@@ -134,6 +138,7 @@ class FaceDatabase:
             features: 特征向量
             face_image: 人脸图片（BGR格式）
             blessing: 分配的祝福语
+            face_area: 人脸区域面积（像素）
             
         Returns:
             新创建的访客记录
@@ -158,7 +163,8 @@ class FaceDatabase:
             features=features,
             face_image_path=f"images/{image_filename}",
             first_seen=datetime.now(),
-            blessing=blessing
+            blessing=blessing,
+            face_area=face_area
         )
         
         # 添加到列表
@@ -167,8 +173,41 @@ class FaceDatabase:
         # 保存元数据
         self.save_to_disk()
         
-        logger.info(f"Added new visitor: {visitor_id} with blessing: {blessing}")
+        logger.info(f"Added new visitor: {visitor_id} with blessing: {blessing}, face_area: {face_area}")
         return visitor
+    
+    def update_visitor_image(
+        self,
+        visitor: VisitorRecord,
+        face_image: np.ndarray,
+        face_area: int
+    ):
+        """
+        更新访客的人脸图片（当检测到更高质量的图片时）
+        
+        Args:
+            visitor: 访客记录
+            face_image: 新的人脸图片（BGR格式）
+            face_area: 新的人脸区域面积（像素）
+        """
+        import cv2
+        
+        try:
+            # 更新图片文件
+            image_path = self.storage_dir / visitor.face_image_path
+            cv2.imwrite(str(image_path), face_image)
+            
+            # 更新面积记录
+            visitor.face_area = face_area
+            
+            # 保存元数据
+            self.save_to_disk()
+            
+            logger.info(f"Updated image for visitor {visitor.visitor_id}, new face_area: {face_area}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update visitor image: {e}")
+            raise
     
     def get_total_visitors(self) -> int:
         """

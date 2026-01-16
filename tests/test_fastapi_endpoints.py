@@ -40,7 +40,8 @@ def test_statistics_endpoint():
     mock_service.start.return_value = None
     mock_service.stop.return_value = None
     
-    with patch('src.greeter_service.GreeterService', return_value=mock_service):
+    # 需要patch main模块中的全局变量
+    with patch('main.greeter_service', mock_service):
         from fastapi.testclient import TestClient
         from main import app
         

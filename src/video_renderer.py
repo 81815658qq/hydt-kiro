@@ -86,8 +86,7 @@ class VideoRenderer:
             
             self.draw_blessing_text(rendered_frame, blessing, text_position)
         
-        # 绘制统计信息
-        self._draw_statistics(rendered_frame, total_visitors)
+        # 不再绘制统计信息（已在网页下方显示）
         
         return rendered_frame
     
@@ -162,7 +161,7 @@ class VideoRenderer:
         if position is None:
             position = (10, 30)
         
-        stats_text = f"总访客数: {total_visitors}"
+        stats_text = f"学生总数: {total_visitors}"
         
         # 使用PIL绘制中文统计信息
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

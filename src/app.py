@@ -55,6 +55,50 @@ app = FastAPI(
 )
 
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点"""
+    try:
+        if not greeter_service:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "message": "GreeterService not initialized"
+                }
+            )
+        
+        # 检查摄像头是否正常
+        camera_ok = greeter_service.video_capture.is_opened()
+        
+        if camera_ok:
+            return JSONResponse(
+                content={
+                    "status": "healthy",
+                    "camera": "connected",
+                    "visitors": greeter_service.face_database.get_total_visitors()
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "camera": "disconnected",
+                    "message": "摄像头未连接"
+                }
+            )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": str(e)
+            }
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     """返回HTML页面显示视频流"""
@@ -236,66 +280,111 @@ def generate_frames():
         logger.error("GreeterService not initialized")
         return
     
+    consecutive_failures = 0
+    max_consecutive_failures = 10
+    
     while True:
         try:
             # 处理一帧
             frame = greeter_service.process_frame()
             
             if frame is None:
-                logger.warning("Failed to process frame")
+                consecutive_failures += 1
+                logger.warning(f"Failed to process frame (consecutive failures: {consecutive_failures})")
+                
+                # 如果连续失败次数过多，停止生成
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(f"Too many consecutive failures ({consecutive_failures}), stopping frame generation")
+                    break
+                
                 continue
+            
+            # 成功处理帧，重置失败计数
+            consecutive_failures = 0
             
             # 将帧编码为JPEG
-            ret, buffer = cv2.imencode('.jpg', frame)
-            
-            if not ret:
-                logger.warning("Failed to encode frame")
+            try:
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                
+                if not ret:
+                    logger.warning("Failed to encode frame")
+                    continue
+                
+                # 转换为字节流
+                frame_bytes = buffer.tobytes()
+                
+                # 生成MJPEG格式的帧
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                       
+            except Exception as e:
+                logger.error(f"Error encoding frame: {e}")
+                consecutive_failures += 1
                 continue
-            
-            # 转换为字节流
-            frame_bytes = buffer.tobytes()
-            
-            # 生成MJPEG格式的帧
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                    
         except Exception as e:
-            logger.error(f"Error generating frame: {e}")
-            break
+            logger.error(f"Unexpected error generating frame: {e}")
+            consecutive_failures += 1
+            
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error("Too many consecutive failures, stopping frame generation")
+                break
 
 
 @app.get("/video_feed")
 async def video_feed():
     """返回MJPEG视频流"""
-    if not greeter_service:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "GreeterService not initialized"}
+    try:
+        if not greeter_service:
+            logger.error("Video feed requested but GreeterService not initialized")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "Service Unavailable",
+                    "message": "迎宾服务未初始化，请检查摄像头连接"
+                }
+            )
+        
+        return StreamingResponse(
+            generate_frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame"
         )
-    
-    return StreamingResponse(
-        generate_frames(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
+    except Exception as e:
+        logger.error(f"Error in video_feed endpoint: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal Server Error",
+                "message": f"视频流生成失败: {str(e)}"
+            }
+        )
 
 
 @app.get("/api/statistics")
 async def get_statistics():
     """返回JSON格式的统计数据"""
-    if not greeter_service:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "GreeterService not initialized"}
-        )
-    
     try:
+        if not greeter_service:
+            logger.error("Statistics requested but GreeterService not initialized")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "Service Unavailable",
+                    "message": "迎宾服务未初始化"
+                }
+            )
+        
         stats = greeter_service.get_statistics()
         return JSONResponse(content=stats)
+        
     except Exception as e:
-        logger.error(f"Error getting statistics: {e}")
+        logger.error(f"Error in statistics endpoint: {e}")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e)}
+            content={
+                "error": "Internal Server Error",
+                "message": f"获取统计数据失败: {str(e)}"
+            }
         )
 
 

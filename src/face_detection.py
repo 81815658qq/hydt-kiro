@@ -119,13 +119,27 @@ class FaceDetector:
             logger.error(f"Face detection failed: {e}")
             return []
     
-    def extract_face_region(self, frame: np.ndarray, detection: FaceDetection) -> Optional[np.ndarray]:
+    def extract_face_region(
+        self, 
+        frame: np.ndarray, 
+        detection: FaceDetection,
+        expand_ratio: float = 0.0,
+        expand_top: float = None,
+        expand_bottom: float = None,
+        expand_left: float = None,
+        expand_right: float = None
+    ) -> Optional[np.ndarray]:
         """
         从帧中提取人脸区域图像
         
         Args:
             frame: BGR格式的视频帧
             detection: 人脸检测结果
+            expand_ratio: 边界框扩展比例（0.0-1.0），用于包含更多周边区域如头发
+            expand_top: 顶部扩展比例（优先于expand_ratio）
+            expand_bottom: 底部扩展比例（优先于expand_ratio）
+            expand_left: 左侧扩展比例（优先于expand_ratio）
+            expand_right: 右侧扩展比例（优先于expand_ratio）
             
         Returns:
             人脸区域图像（BGR格式），如果提取失败则返回None
@@ -133,6 +147,24 @@ class FaceDetector:
         try:
             height, width = frame.shape[:2]
             x, y, w, h = detection.to_pixel_coords(width, height)
+            
+            # 如果需要扩展边界框
+            if expand_ratio > 0 or any([expand_top, expand_bottom, expand_left, expand_right]):
+                # 使用指定的扩展比例，如果没有指定则使用默认的expand_ratio
+                top_ratio = expand_top if expand_top is not None else expand_ratio
+                bottom_ratio = expand_bottom if expand_bottom is not None else expand_ratio
+                left_ratio = expand_left if expand_left is not None else expand_ratio
+                right_ratio = expand_right if expand_right is not None else expand_ratio
+                
+                expand_w_left = int(w * left_ratio)
+                expand_w_right = int(w * right_ratio)
+                expand_h_top = int(h * top_ratio)
+                expand_h_bottom = int(h * bottom_ratio)
+                
+                x = x - expand_w_left
+                y = y - expand_h_top
+                w = w + expand_w_left + expand_w_right
+                h = h + expand_h_top + expand_h_bottom
             
             # 确保坐标在有效范围内
             x = max(0, x)
@@ -155,6 +187,21 @@ class FaceDetector:
         except Exception as e:
             logger.error(f"Face region extraction failed: {e}")
             return None
+    
+    def calculate_face_area(self, detection: FaceDetection, frame_width: int, frame_height: int) -> int:
+        """
+        计算人脸区域的像素面积
+        
+        Args:
+            detection: 人脸检测结果
+            frame_width: 帧宽度
+            frame_height: 帧高度
+            
+        Returns:
+            人脸区域的像素面积
+        """
+        x, y, w, h = detection.to_pixel_coords(frame_width, frame_height)
+        return w * h
     
     def __del__(self):
         """释放资源"""

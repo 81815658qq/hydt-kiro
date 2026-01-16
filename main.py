@@ -171,8 +171,7 @@ async def index():
     <body>
         <div class="container">
             <header>
-                <h1>🎊 迎宾器系统 🎊</h1>
-                <p class="subtitle">欢迎光临！祝您好运连连！</p>
+                <h1>基于计算机视觉的实时学生检测、问候系统</h1>
             </header>
             
             <div class="video-container">
@@ -182,7 +181,7 @@ async def index():
             <div class="stats-container">
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-label">总访客数</div>
+                        <div class="stat-label">学生总数</div>
                         <div class="stat-value" id="total-visitors">-</div>
                     </div>
                     <div class="stat-card">
@@ -300,12 +299,68 @@ async def get_statistics():
 
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
+    from src.video_capture import detect_available_cameras
     
-    logger.info(f"Starting server on {API_HOST}:{API_PORT}")
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description="迎宾器系统 - 基于计算机视觉的实时学生检测和问候系统")
+    parser.add_argument("--host", type=str, default=API_HOST, help=f"服务器地址 (默认: {API_HOST})")
+    parser.add_argument("--port", type=int, default=API_PORT, help=f"服务器端口 (默认: {API_PORT})")
+    parser.add_argument("--camera", type=int, default=None, help=f"摄像头索引 (默认: 自动检测)")
+    parser.add_argument("--threshold", type=float, default=SIMILARITY_THRESHOLD, help=f"人脸相似度阈值 (默认: {SIMILARITY_THRESHOLD})")
+    
+    args = parser.parse_args()
+    
+    # 检测可用摄像头
+    available_cameras = detect_available_cameras()
+    
+    # 如果没有指定摄像头，让用户选择
+    if args.camera is None:
+        if not available_cameras:
+            logger.error("未检测到任何可用摄像头，程序退出")
+            exit(1)
+        elif len(available_cameras) == 1:
+            # 只有一个摄像头，直接使用
+            camera_index = available_cameras[0]
+            logger.info(f"自动选择摄像头: {camera_index}")
+        else:
+            # 多个摄像头，让用户选择
+            print("\n检测到多个摄像头:")
+            for idx in available_cameras:
+                print(f"  [{idx}] 摄像头 {idx}")
+            
+            while True:
+                try:
+                    choice = input(f"\n请选择摄像头索引 {available_cameras}: ")
+                    camera_index = int(choice)
+                    if camera_index in available_cameras:
+                        break
+                    else:
+                        print(f"无效的摄像头索引，请从 {available_cameras} 中选择")
+                except ValueError:
+                    print("请输入有效的数字")
+                except KeyboardInterrupt:
+                    print("\n用户取消，程序退出")
+                    exit(0)
+    else:
+        camera_index = args.camera
+        if available_cameras and camera_index not in available_cameras:
+            logger.warning(f"指定的摄像头 {camera_index} 可能不可用，检测到的摄像头: {available_cameras}")
+    
+    # 更新配置
+    import src.config as config
+    config.API_HOST = args.host
+    config.API_PORT = args.port
+    config.DEFAULT_CAMERA_INDEX = camera_index
+    config.SIMILARITY_THRESHOLD = args.threshold
+    
+    logger.info(f"Starting server on {args.host}:{args.port}")
+    logger.info(f"Camera index: {camera_index}, Similarity threshold: {args.threshold}")
+    
     uvicorn.run(
         app,
-        host=API_HOST,
-        port=API_PORT,
+        host=args.host,
+        port=args.port,
         log_level="info"
     )

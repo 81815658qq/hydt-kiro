@@ -77,26 +77,38 @@ class GreeterService:
                 return None
             
             # 2. 检测所有人脸
-            detections = self.face_detector.detect_faces(frame)
+            try:
+                detections = self.face_detector.detect_faces(frame)
+            except Exception as e:
+                logger.error(f"Face detection failed: {e}")
+                detections = []
             
             # 3. 处理每个检测到的人脸
             blessings = []
             for detection in detections:
-                blessing = self._process_face(frame, detection)
-                blessings.append(blessing)
+                try:
+                    blessing = self._process_face(frame, detection)
+                    blessings.append(blessing)
+                except Exception as e:
+                    logger.error(f"Error processing individual face: {e}")
+                    blessings.append("欢迎光临")
             
             # 4. 渲染帧
-            rendered_frame = self.video_renderer.render_frame(
-                frame,
-                detections,
-                blessings,
-                self.face_database.get_total_visitors()
-            )
-            
-            return rendered_frame
+            try:
+                rendered_frame = self.video_renderer.render_frame(
+                    frame,
+                    detections,
+                    blessings,
+                    self.face_database.get_total_visitors()
+                )
+                return rendered_frame
+            except Exception as e:
+                logger.error(f"Frame rendering failed: {e}")
+                # 渲染失败时返回原始帧
+                return frame
             
         except Exception as e:
-            logger.error(f"Error processing frame: {e}")
+            logger.error(f"Unexpected error processing frame: {e}")
             return None
     
     def _process_face(
@@ -115,41 +127,79 @@ class GreeterService:
             祝福语字符串
         """
         try:
-            # 提取人脸区域
-            face_region = self.face_detector.extract_face_region(frame, detection)
+            # 提取人脸区域（向上扩展以包含头发，向下扩展包含下巴和脖子）
+            face_region = self.face_detector.extract_face_region(
+                frame, 
+                detection, 
+                expand_top=0.6,      # 向上扩展60%（包含头发但不过多）
+                expand_bottom=0.6,   # 向下扩展60%（包含下巴和脖子）
+                expand_left=0.4,     # 向左扩展40%
+                expand_right=0.4     # 向右扩展40%
+            )
             if face_region is None:
                 logger.warning("Failed to extract face region")
                 return "欢迎光临"
             
+            # 计算当前人脸面积
+            frame_height, frame_width = frame.shape[:2]
+            current_face_area = self.face_detector.calculate_face_area(detection, frame_width, frame_height)
+            
             # 提取特征向量
-            features = self.feature_extractor.extract_features(face_region)
-            if features is None:
-                logger.warning("Failed to extract features")
+            try:
+                features = self.feature_extractor.extract_features(face_region)
+                if features is None:
+                    logger.warning("Failed to extract features")
+                    return "欢迎光临"
+            except Exception as e:
+                logger.error(f"Feature extraction error: {e}")
                 return "欢迎光临"
             
             # 在数据库中查找匹配的访客
-            matching_visitor = self.face_database.find_matching_visitor(
-                features, 
-                self.similarity_threshold
-            )
+            try:
+                matching_visitor = self.face_database.find_matching_visitor(
+                    features, 
+                    self.similarity_threshold
+                )
+            except Exception as e:
+                logger.error(f"Database lookup error: {e}")
+                return "欢迎光临"
             
             if matching_visitor:
-                # 已知访客，使用已有祝福语
+                # 已知访客，检查是否需要更新图片质量
                 logger.info(f"Recognized visitor: {matching_visitor.visitor_id}")
+                
+                # 如果当前人脸面积更大，更新保存的图片
+                if current_face_area > matching_visitor.face_area:
+                    try:
+                        self.face_database.update_visitor_image(
+                            matching_visitor,
+                            face_region,
+                            current_face_area
+                        )
+                        logger.info(f"Updated image for visitor {matching_visitor.visitor_id}: "
+                                  f"area {matching_visitor.face_area} -> {current_face_area}")
+                    except Exception as e:
+                        logger.error(f"Error updating visitor image: {e}")
+                
                 return matching_visitor.blessing
             else:
                 # 新访客，添加到数据库
-                blessing = self.blessing_generator.get_random_blessing()
-                visitor = self.face_database.add_visitor(
-                    features,
-                    face_region,
-                    blessing
-                )
-                logger.info(f"New visitor added: {visitor.visitor_id} with blessing: {blessing}")
-                return blessing
+                try:
+                    blessing = self.blessing_generator.get_random_blessing()
+                    visitor = self.face_database.add_visitor(
+                        features,
+                        face_region,
+                        blessing,
+                        current_face_area
+                    )
+                    logger.info(f"New visitor added: {visitor.visitor_id} with blessing: {blessing}, face_area: {current_face_area}")
+                    return blessing
+                except Exception as e:
+                    logger.error(f"Error adding new visitor: {e}")
+                    return "欢迎光临"
                 
         except Exception as e:
-            logger.error(f"Error processing face: {e}")
+            logger.error(f"Unexpected error processing face: {e}")
             return "欢迎光临"
     
     def get_statistics(self) -> Dict:
@@ -159,11 +209,19 @@ class GreeterService:
         Returns:
             包含统计数据的字典
         """
-        return {
-            "total_visitors": self.face_database.get_total_visitors(),
-            "camera_fps": self.video_capture.get_fps(),
-            "camera_resolution": self.video_capture.get_resolution()
-        }
+        try:
+            return {
+                "total_visitors": self.face_database.get_total_visitors(),
+                "camera_fps": self.video_capture.get_fps(),
+                "camera_resolution": self.video_capture.get_resolution()
+            }
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            return {
+                "total_visitors": 0,
+                "camera_fps": 0.0,
+                "camera_resolution": (0, 0)
+            }
     
     def start(self):
         """启动服务"""
